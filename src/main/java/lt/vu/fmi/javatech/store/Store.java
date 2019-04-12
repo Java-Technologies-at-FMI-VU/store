@@ -1,13 +1,30 @@
 package lt.vu.fmi.javatech.store;
 
-import java.util.Map;
+import com.google.inject.Injector;
+import com.google.inject.Provider;
+import java.io.IOException;
+import java.io.Serializable;
+import javax.inject.Inject;
+import lt.vu.fmi.javatech.store.database.Database;
 import lt.vu.fmi.javatech.store.model.Product;
 import lt.vu.fmi.javatech.store.util.StoreHashMap;
 
 public class Store {
 
-    private final Map<Long, StockItem> stock = new StoreHashMap<>();
-
+    private StoreHashMap<Long, StockItem> stock; // = new StoreHashMap<>();
+    
+    @Inject
+    private Database db;
+    
+    @Inject
+    private Provider<Store> storeProv;
+    
+    @Inject
+    public Store(Database db) throws Exception {
+        this.db = db;
+        stock = db.load();
+    }
+    
     private StockItem getAdd(Product p) {
         if (!stock.containsKey(p.getBarcode())) {
             StockItem si = new StockItem(p);
@@ -55,7 +72,7 @@ public class Store {
         si.amount -= amount;
     }
     
-    private class StockItem {
+    public static class StockItem implements Serializable {
         
         Product product;
         int amount = 0;
@@ -75,4 +92,13 @@ public class Store {
         return sb.toString();
     }
     
+    public void save() throws IOException {
+        db.save(stock);
+    }
+    
+    public void test() {
+        System.out.println(storeProv.get());
+    }
+
+
 }

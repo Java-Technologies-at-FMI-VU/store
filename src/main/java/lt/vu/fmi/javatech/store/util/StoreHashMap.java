@@ -1,5 +1,9 @@
 package lt.vu.fmi.javatech.store.util;
 
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.io.Serializable;
 import java.util.AbstractCollection;
 import java.util.AbstractSet;
 import java.util.Collection;
@@ -7,16 +11,25 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 
-public class StoreHashMap<K,V> implements Map<K, V>{
+public class StoreHashMap<K,V> implements Map<K, V>, Serializable {
 
     private static final int INIT_SIZE = 1 << 4;
     
-    private int size = 0;
-    private Node<K,V>[] table = new Node[INIT_SIZE];
+    private transient int size;
+    private transient Node<K,V>[] table;
     
     private static int hash(Object o) {
-        int h = o.hashCode();
+        int h = o == null ? 0 : o.hashCode();
         return (h >>> 16) ^ h;
+    }
+
+    public StoreHashMap() {
+        initialize();
+    }
+    
+    private void initialize() {
+        size = 0;
+        table = new Node[INIT_SIZE];
     }
     
     @Override
@@ -35,7 +48,7 @@ public class StoreHashMap<K,V> implements Map<K, V>{
         
         Node<K,V> n = table[index];
         while (n != null) {
-            if (n.key.equals(key)) {
+            if ((key == null && n.key == null) || n.key.equals(key)) {
                 return n;
             }
             n = n.next;
@@ -52,7 +65,7 @@ public class StoreHashMap<K,V> implements Map<K, V>{
     public boolean containsValue(Object value) {
         for (Node<K,V> n: table) {
             while (n != null) {
-                if (n.value.equals(value)) {
+                if ((value == null && n.value == null) || n.value.equals(value)) {
                     return true;
                 }
                 n = n.next;
@@ -98,13 +111,13 @@ public class StoreHashMap<K,V> implements Map<K, V>{
         
         Node<K,V> n = table[index];
         if (n != null) {
-            if (n.key.equals(key)) {
+            if ((key == null && n.key == null) || n.key.equals(key)) {
                 table[index] = n.next;
                 size -= 1;
                 return n.value;
             }
             while (n.next != null) {
-                if (n.next.key.equals(key)) {
+                if ((key == null && n.next.key == null) || n.next.key.equals(key)) {
                     V value = n.next.value;
                     n.next = n.next.next;
                     size -= 1;
@@ -118,17 +131,51 @@ public class StoreHashMap<K,V> implements Map<K, V>{
 
     @Override
     public void putAll(Map<? extends K, ? extends V> m) {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+        Iterator<? extends Entry<? extends K, ? extends V>> it = m.entrySet().iterator();
+        while (it.hasNext()) {
+            Entry<? extends K, ? extends V> e = it.next();
+            put(e.getKey(), e.getValue());
+        }
     }
 
     @Override
     public void clear() {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+        initialize();
     }
 
     @Override
     public Set<K> keySet() {
-        throw new UnsupportedOperationException("Not supported yet."); //To change body of generated methods, choose Tools | Templates.
+        return new AbstractSet<K>() {
+            
+            @Override
+            public Iterator<K> iterator() {
+                return new Iterator<K>() {
+                    
+                    private final Iterator<Entry<K, V>> it = new NodeSet().iterator();
+                    
+                    @Override
+                    public boolean hasNext() {
+                        return it.hasNext();
+                    }
+
+                    @Override
+                    public K next() {
+                        return it.next().getKey();
+                    }
+
+                    @Override
+                    public void remove() {
+                        it.remove();
+                    }
+                    
+                };
+            }
+
+            @Override
+            public int size() {
+                return size;
+            }
+        };
     }
 
     @Override
@@ -167,7 +214,7 @@ public class StoreHashMap<K,V> implements Map<K, V>{
         return new NodeSet();
     }
     
-    class NodeSet extends AbstractSet<Entry<K,V>> {
+    final class NodeSet extends AbstractSet<Entry<K,V>> {
 
         @Override
         public Iterator<Entry<K, V>> iterator() {
@@ -175,6 +222,7 @@ public class StoreHashMap<K,V> implements Map<K, V>{
                 
                 private int index = 0;
                 private Node<K,V> node;
+                private Node<K,V> prev;
                 
                 @Override
                 public boolean hasNext() {
@@ -186,9 +234,14 @@ public class StoreHashMap<K,V> implements Map<K, V>{
 
                 @Override
                 public Entry<K, V> next() {
-                    Node<K,V> curr = node;
+                    prev = node;
                     node = node.next;
-                    return curr;
+                    return prev;
+                }
+
+                @Override
+                public void remove() {
+                    StoreHashMap.this.remove(prev.getKey());
                 }
                 
             };
@@ -228,6 +281,62 @@ public class StoreHashMap<K,V> implements Map<K, V>{
             this.value = value;
             return old;
         }
+        
+    }
+
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder("StoreHashMap{");
+        boolean isfirst = true;
+        Iterator<Entry<K, V>> it = new NodeSet().iterator();
+        while (it.hasNext()) {
+            Entry<K, V> e = it.next();
+            if (!isfirst) sb.append(",");
+            sb.append(e.getKey()).append("=").append(e.getValue());
+            isfirst = false;
+        }
+        return sb.append('}').toString();
+    }
+    
+    private void writeObject(ObjectOutputStream out) throws IOException {
+        out.writeInt(size);
+        for (Map.Entry<K,V> e: entrySet()) {
+            out.writeObject(e.getKey());
+            out.writeObject(e.getValue());
+        }
+    }
+    
+    private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
+        initialize();
+        int capacity = in.readInt();
+        for (int i = 0; i < capacity; i++) {
+            put((K) in.readObject(), (V) in.readObject());
+        }
+    }
+    
+    public static void main(String[] args) {
+        
+        Map m = new StoreHashMap();
+        
+        m.put(1, "vienas");
+        m.put(2, "du");
+        m.put("trys", 3);
+        m.put(null, 3);
+        m.put(4, null);
+        
+        System.out.println(m.containsKey(null));
+        System.out.println(m.containsValue(null));
+        
+        System.out.println(m);
+        
+        Iterator it = m.keySet().iterator();
+        while (it.hasNext()) {
+            if (it.next() == null) {
+                it.remove();
+            }
+        }
+        
+        System.out.println(m);
         
     }
     

@@ -1,9 +1,10 @@
 package lt.vu.fmi.javatech.store.model;
 
+import java.io.Serializable;
 import java.util.Date;
 import java.util.Objects;
 
-public abstract class Product {
+public abstract class Product implements Serializable {
     
     private final Long barcode;
     private final Date productionDate;
